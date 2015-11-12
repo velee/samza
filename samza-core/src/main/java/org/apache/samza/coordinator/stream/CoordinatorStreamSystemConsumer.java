@@ -30,6 +30,8 @@ import org.apache.samza.Partition;
 import org.apache.samza.SamzaException;
 import org.apache.samza.config.Config;
 import org.apache.samza.config.MapConfig;
+import org.apache.samza.coordinator.stream.messages.CoordinatorStreamMessage;
+import org.apache.samza.coordinator.stream.messages.SetConfig;
 import org.apache.samza.serializers.JsonSerde;
 import org.apache.samza.serializers.Serde;
 import org.apache.samza.system.IncomingMessageEnvelope;
@@ -79,6 +81,10 @@ public class CoordinatorStreamSystemConsumer {
    * coordinator stream with the SystemConsumer using the earliest offset.
    */
   public void register() {
+    if (isStarted) {
+      log.info("Coordinator stream partition {} has already been registered. Skipping.", coordinatorSystemStreamPartition);
+      return;
+    }
     log.debug("Attempting to register: {}", coordinatorSystemStreamPartition);
     Set<String> streamNames = new HashSet<String>();
     String streamName = coordinatorSystemStreamPartition.getStream();
@@ -125,6 +131,7 @@ public class CoordinatorStreamSystemConsumer {
   public void stop() {
     log.info("Stopping coordinator stream system consumer.");
     systemConsumer.stop();
+    isStarted = false;
   }
 
   /**
@@ -146,12 +153,12 @@ public class CoordinatorStreamSystemConsumer {
         CoordinatorStreamMessage coordinatorStreamMessage = new CoordinatorStreamMessage(keyArray, valueMap);
         log.debug("Received coordinator stream message: {}", coordinatorStreamMessage);
         bootstrappedStreamSet.add(coordinatorStreamMessage);
-        if (CoordinatorStreamMessage.SetConfig.TYPE.equals(coordinatorStreamMessage.getType())) {
+        if (SetConfig.TYPE.equals(coordinatorStreamMessage.getType())) {
           String configKey = coordinatorStreamMessage.getKey();
           if (coordinatorStreamMessage.isDelete()) {
             configMap.remove(configKey);
           } else {
-            String configValue = new CoordinatorStreamMessage.SetConfig(coordinatorStreamMessage).getConfigValue();
+            String configValue = new SetConfig(coordinatorStreamMessage).getConfigValue();
             configMap.put(configKey, configValue);
           }
         }
@@ -184,7 +191,7 @@ public class CoordinatorStreamSystemConsumer {
 
   /**
    * @return The bootstrapped configuration that's been read after bootstrap has
-   *         been invoked.
+   * been invoked.
    */
   public Config getConfig() {
     if (isBootstrapped) {
@@ -193,4 +200,61 @@ public class CoordinatorStreamSystemConsumer {
       throw new SamzaException("Must call bootstrap before retrieving config.");
     }
   }
+
+  /**
+   * Gets an iterator on the coordinator stream, starting from the starting offset the consumer was registered with.
+   *
+   * @return an iterator on the coordinator stream pointing to the starting offset the consumer was registered with.
+   */
+  public SystemStreamPartitionIterator getStartIterator() {
+    return new SystemStreamPartitionIterator(systemConsumer, coordinatorSystemStreamPartition);
+  }
+
+  /**
+   * returns all unread messages after an iterator on the stream
+   *
+   * @param iterator the iterator pointing to an offset in the coordinator stream. All unread messages after this iterator are returned
+   * @return a set of unread messages after a given iterator
+   */
+  public Set<CoordinatorStreamMessage> getUnreadMessages(SystemStreamPartitionIterator iterator) {
+    return getUnreadMessages(iterator, null);
+  }
+
+  /**
+   * returns all unread messages of a specific type, after an iterator on the stream
+   *
+   * @param iterator the iterator pointing to an offset in the coordinator stream. All unread messages after this iterator are returned
+   * @param type     the type of the messages to be returned
+   * @return a set of unread messages of a given type, after a given iterator
+   */
+  public Set<CoordinatorStreamMessage> getUnreadMessages(SystemStreamPartitionIterator iterator, String type) {
+    LinkedHashSet<CoordinatorStreamMessage> messages = new LinkedHashSet<CoordinatorStreamMessage>();
+    while (iterator.hasNext()) {
+      IncomingMessageEnvelope envelope = iterator.next();
+      Object[] keyArray = keySerde.fromBytes((byte[]) envelope.getKey()).toArray();
+      Map<String, Object> valueMap = null;
+      if (envelope.getMessage() != null) {
+        valueMap = messageSerde.fromBytes((byte[]) envelope.getMessage());
+      }
+      CoordinatorStreamMessage coordinatorStreamMessage = new CoordinatorStreamMessage(keyArray, valueMap);
+      if (type == null || type.equals(coordinatorStreamMessage.getType())) {
+        messages.add(coordinatorStreamMessage);
+      }
+    }
+    return messages;
+  }
+
+  /**
+   * Checks whether or not there are any messages after a given iterator on the coordinator stream
+   *
+   * @param iterator The iterator to check if there are any new messages after this point
+   * @return True if there are new messages after the iterator, false otherwise
+   */
+  public boolean hasNewMessages(SystemStreamPartitionIterator iterator) {
+    if (iterator == null) {
+      return false;
+    }
+    return iterator.hasNext();
+  }
+
 }

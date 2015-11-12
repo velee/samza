@@ -20,6 +20,7 @@
 package org.apache.samza.container
 
 import org.junit.Test
+import org.junit.Assert._
 import org.mockito.Matchers
 import org.mockito.Mockito._
 import org.mockito.invocation.InvocationOnMock
@@ -94,8 +95,8 @@ class TestRunLoop extends AssertionsForJUnit with MockitoSugar with ScalaTestMat
       windowMs = 60000, // call window once per minute
       commitMs = 30000, // call commit twice per minute
       clock = () => {
-        now += 100 // clock advances by 100 ms every time we look at it
-        if (now == 1400000290000L) throw new StopRunLoop // stop after 4 minutes 50 seconds
+        now += 100000000L // clock advances by 100 ms every time we look at it
+        if (now == 1690000000000L) throw new StopRunLoop // stop after 4 minutes 50 seconds
         now
       })
 
@@ -190,26 +191,26 @@ class TestRunLoop extends AssertionsForJUnit with MockitoSugar with ScalaTestMat
       windowMs = 1L,
       commitMs = 1L,
       clock = () => {
-        now += 1L
+        now += 1000000L
         // clock() is called 15 times totally in RunLoop
         // stop the runLoop after one run
-        if (now == 15L) throw new StopRunLoop
+        if (now == 15000000L) throw new StopRunLoop
         now
       })
     intercept[StopRunLoop] { runLoop.run }
 
-    testMetrics.chooseMs.getSnapshot.getAverage should equal(1L)
-    testMetrics.windowMs.getSnapshot.getAverage should equal(3L)
-    testMetrics.processMs.getSnapshot.getAverage should equal(3L)
-    testMetrics.commitMs.getSnapshot.getAverage should equal(0L)
+    testMetrics.chooseNs.getSnapshot.getAverage should equal(1000000L)
+    testMetrics.windowNs.getSnapshot.getAverage should equal(1000000L)
+    testMetrics.processNs.getSnapshot.getAverage should equal(3000000L)
+    testMetrics.commitNs.getSnapshot.getAverage should equal(1000000L)
 
     now = 0L
     intercept[StopRunLoop] { runLoop.run }
     // after two loops
-    testMetrics.chooseMs.getSnapshot.getSize should equal(2)
-    testMetrics.windowMs.getSnapshot.getSize should equal(2)
-    testMetrics.processMs.getSnapshot.getSize should equal(2)
-    testMetrics.commitMs.getSnapshot.getSize should equal(1)
+    testMetrics.chooseNs.getSnapshot.getSize should equal(3)
+    testMetrics.windowNs.getSnapshot.getSize should equal(2)
+    testMetrics.processNs.getSnapshot.getSize should equal(2)
+    testMetrics.commitNs.getSnapshot.getSize should equal(2)
   }
 
   @Test
@@ -224,8 +225,8 @@ class TestRunLoop extends AssertionsForJUnit with MockitoSugar with ScalaTestMat
       commitMs = 1L,
       windowMs = 1L,
       clock = () => {
-        now += 1L
-        if (now == 13L) throw new StopRunLoop
+        now += 1000000L
+        if (now == 13000000L) throw new StopRunLoop
         now
       }
     )
@@ -242,5 +243,20 @@ class TestRunLoop extends AssertionsForJUnit with MockitoSugar with ScalaTestMat
     // as commit and window should not be called immediately on startup
     testMetrics.commits.getCount should equal(1L)
     testMetrics.windows.getCount should equal(1L)
+  }
+
+  @Test
+  def testGetSystemStreamPartitionToTaskInstancesMapping {
+    val ti0 = mock[TaskInstance]
+    val ti1 = mock[TaskInstance]
+    val ti2 = mock[TaskInstance]
+    when(ti0.systemStreamPartitions).thenReturn(Set(ssp0))
+    when(ti1.systemStreamPartitions).thenReturn(Set(ssp1))
+    when(ti2.systemStreamPartitions).thenReturn(Set(ssp1))
+
+    val mockTaskInstances = Map(taskName0 -> ti0, taskName1 -> ti1, new TaskName("2") -> ti2)
+    val runLoop = new RunLoop(mockTaskInstances, null, new SamzaContainerMetrics)
+    val expected = Map(ssp0 -> List(ti0), ssp1 -> List(ti1, ti2))
+    assertEquals(expected, runLoop.getSystemStreamPartitionToTaskInstancesMapping)
   }
 }

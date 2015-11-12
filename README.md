@@ -28,7 +28,7 @@ After the bootstrap script has completed, the regular gradlew instructions below
 
 #### Scala and YARN
 
-Samza builds with [Scala](http://www.scala-lang.org/) 2.10 and [YARN](http://hadoop.apache.org/docs/current/hadoop-yarn/hadoop-yarn-site/YARN.html) 2.4.0, by default. Use the -PscalaVersion switches to change Scala versions. Samza supports building Scala with 2.10.
+Samza builds with [Scala](http://www.scala-lang.org/) 2.10 and [YARN](http://hadoop.apache.org/docs/current/hadoop-yarn/hadoop-yarn-site/YARN.html) 2.6.0, by default. Use the -PscalaVersion switches to change Scala versions. Samza supports building Scala with 2.10.
 
     ./gradlew -PscalaVersion=2.10 clean build
 
@@ -78,6 +78,10 @@ To get Eclipse projects, run:
 For IntelliJ, run:
 
     ./gradlew idea
+
+### Contribution
+
+To start contributing on Samza please read [Rules](http://samza.apache.org/contribute/rules.html) and [Contributor Corner](https://cwiki.apache.org/confluence/display/SAMZA/Contributor%27s+Corner). Notice that **Samza git repository does not support git pull request**.
 
 ### Apache Software Foundation
 

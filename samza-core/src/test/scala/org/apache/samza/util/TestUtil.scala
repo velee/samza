@@ -22,6 +22,9 @@ package org.apache.samza.util
 import java.io._
 import org.junit.Assert._
 import org.junit.Test
+import org.apache.samza.config.MapConfig
+import org.apache.samza.serializers._
+import org.apache.samza.SamzaException
 
 class TestUtil {
 
@@ -62,5 +65,32 @@ class TestUtil {
     // Check data returned
     assertEquals(data, result)
 
+  }
+
+  @Test
+  def testGetLocalHost(): Unit = {
+    assertNotNull(Util.getLocalHost)
+  }
+
+  @Test
+  def testDefaultSerdeFactoryFromSerdeName {
+    import Util._
+    val config = new MapConfig
+    assertEquals(classOf[ByteSerdeFactory].getName, defaultSerdeFactoryFromSerdeName("byte"))
+    assertEquals(classOf[IntegerSerdeFactory].getName, defaultSerdeFactoryFromSerdeName("integer"))
+    assertEquals(classOf[JsonSerdeFactory].getName, defaultSerdeFactoryFromSerdeName("json"))
+    assertEquals(classOf[LongSerdeFactory].getName, defaultSerdeFactoryFromSerdeName("long"))
+    assertEquals(classOf[SerializableSerdeFactory[java.io.Serializable@unchecked]].getName, defaultSerdeFactoryFromSerdeName("serializable"))
+    assertEquals(classOf[StringSerdeFactory].getName, defaultSerdeFactoryFromSerdeName("string"))
+
+    // throw SamzaException if can not find the correct serde
+    var throwSamzaException = false
+    try {
+      defaultSerdeFactoryFromSerdeName("otherName")
+    } catch {
+      case e: SamzaException => throwSamzaException = true
+      case _: Exception =>
+    }
+    assertTrue(throwSamzaException)
   }
 }

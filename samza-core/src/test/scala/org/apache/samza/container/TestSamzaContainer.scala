@@ -54,7 +54,7 @@ import org.scalatest.junit.AssertionsForJUnit
 import java.lang.Thread.UncaughtExceptionHandler
 import org.apache.samza.serializers._
 import org.apache.samza.SamzaException
-import org.apache.samza.checkpoint.CheckpointManager
+import org.apache.samza.checkpoint.{Checkpoint, CheckpointManager}
 
 class TestSamzaContainer extends AssertionsForJUnit {
   @Test
@@ -63,15 +63,15 @@ class TestSamzaContainer extends AssertionsForJUnit {
     val offsets = new util.HashMap[SystemStreamPartition, String]()
     offsets.put(new SystemStreamPartition("system","stream", new Partition(0)), "1")
     val tasks = Map(
-      new TaskName("t1") -> new TaskModel(new TaskName("t1"), offsets, new Partition(0)),
-      new TaskName("t2") -> new TaskModel(new TaskName("t2"), offsets, new Partition(0)))
+      new TaskName("t1") -> new TaskModel(new TaskName("t1"), offsets.keySet(), new Partition(0)),
+      new TaskName("t2") -> new TaskModel(new TaskName("t2"), offsets.keySet(), new Partition(0)))
     val containers = Map(
       Integer.valueOf(0) -> new ContainerModel(0, tasks),
       Integer.valueOf(1) -> new ContainerModel(1, tasks))
     val jobModel = new JobModel(config, containers)
     def jobModelGenerator(): JobModel = jobModel
     val server = new HttpServer
-    val coordinator = new JobCoordinator(jobModel, server, new MockCheckpointManager)
+    val coordinator = new JobCoordinator(jobModel, server)
     coordinator.server.addServlet("/*", new JobServlet(jobModelGenerator))
     try {
       coordinator.start
@@ -87,12 +87,12 @@ class TestSamzaContainer extends AssertionsForJUnit {
     val offsets = new util.HashMap[SystemStreamPartition, String]()
     offsets.put(new SystemStreamPartition("system", "stream", new Partition(0)), "1")
     val tasksForContainer1 = Map(
-      new TaskName("t1") -> new TaskModel(new TaskName("t1"), offsets, new Partition(0)),
-      new TaskName("t2") -> new TaskModel(new TaskName("t2"), offsets, new Partition(1)))
+      new TaskName("t1") -> new TaskModel(new TaskName("t1"), offsets.keySet(), new Partition(0)),
+      new TaskName("t2") -> new TaskModel(new TaskName("t2"), offsets.keySet(), new Partition(1)))
     val tasksForContainer2 = Map(
-      new TaskName("t3") -> new TaskModel(new TaskName("t3"), offsets, new Partition(2)),
-      new TaskName("t4") -> new TaskModel(new TaskName("t4"), offsets, new Partition(3)),
-      new TaskName("t5") -> new TaskModel(new TaskName("t6"), offsets, new Partition(4)))
+      new TaskName("t3") -> new TaskModel(new TaskName("t3"), offsets.keySet(), new Partition(2)),
+      new TaskName("t4") -> new TaskModel(new TaskName("t4"), offsets.keySet(), new Partition(3)),
+      new TaskName("t5") -> new TaskModel(new TaskName("t6"), offsets.keySet(), new Partition(4)))
     val containerModel1 = new ContainerModel(0, tasksForContainer1)
     val containerModel2 = new ContainerModel(1, tasksForContainer2)
     val containers = Map(
@@ -152,6 +152,7 @@ class TestSamzaContainer extends AssertionsForJUnit {
       taskName,
       config,
       new TaskInstanceMetrics,
+      null,
       consumerMultiplexer,
       collector,
       containerContext
@@ -166,7 +167,8 @@ class TestSamzaContainer extends AssertionsForJUnit {
       runLoop = runLoop,
       consumerMultiplexer = consumerMultiplexer,
       producerMultiplexer = producerMultiplexer,
-      metrics = new SamzaContainerMetrics
+      metrics = new SamzaContainerMetrics,
+      jmxServer = null
     )
     try {
       container.run
@@ -200,31 +202,15 @@ class TestSamzaContainer extends AssertionsForJUnit {
     t.join
     assertTrue(caughtException)
   }
-
-  @Test
-  def testDefaultSerdeFactoryFromSerdeName {
-    import SamzaContainer._
-    val config = new MapConfig
-    assertEquals(classOf[ByteSerdeFactory].getName, defaultSerdeFactoryFromSerdeName("byte"))
-    assertEquals(classOf[IntegerSerdeFactory].getName, defaultSerdeFactoryFromSerdeName("integer"))
-    assertEquals(classOf[JsonSerdeFactory].getName, defaultSerdeFactoryFromSerdeName("json"))
-    assertEquals(classOf[LongSerdeFactory].getName, defaultSerdeFactoryFromSerdeName("long"))
-    assertEquals(classOf[SerializableSerdeFactory[java.io.Serializable@unchecked]].getName, defaultSerdeFactoryFromSerdeName("serializable"))
-    assertEquals(classOf[StringSerdeFactory].getName, defaultSerdeFactoryFromSerdeName("string"))
-
-    // throw SamzaException if can not find the correct serde
-    var throwSamzaException = false
-    try {
-      defaultSerdeFactoryFromSerdeName("otherName")
-    } catch {
-      case e: SamzaException => throwSamzaException = true
-      case _: Exception =>
-    }
-    assertTrue(throwSamzaException)
-  }
 }
 
-class MockCheckpointManager extends CheckpointManager(null, null) {
+class MockCheckpointManager extends CheckpointManager {
   override def start() = {}
   override def stop() = {}
+
+  override def register(taskName: TaskName): Unit = {}
+
+  override def readLastCheckpoint(taskName: TaskName): Checkpoint = { new Checkpoint(Map[SystemStreamPartition, String]()) }
+
+  override def writeCheckpoint(taskName: TaskName, checkpoint: Checkpoint): Unit = { }
 }

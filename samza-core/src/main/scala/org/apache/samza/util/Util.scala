@@ -19,7 +19,7 @@
 
 package org.apache.samza.util
 
-import java.net.{HttpURLConnection, URL}
+import java.net._
 import java.io._
 import java.lang.management.ManagementFactory
 import java.util.zip.CRC32
@@ -34,10 +34,14 @@ import org.apache.samza.config.ConfigException
 import org.apache.samza.config.MapConfig
 import scala.collection.JavaConversions._
 import org.apache.samza.config.JobConfig
+import java.io.InputStreamReader
+import scala.collection.immutable.Map
+import org.apache.samza.serializers._
 
 object Util extends Logging {
   val random = new Random
 
+  def clock: Long = System.currentTimeMillis
   /**
    * Make an environment variable string safe to pass.
    */
@@ -167,7 +171,6 @@ object Util extends Logging {
     body
   }
 
-
   /**
    * Generates a coordinator stream name based off of the job name and job id
    * for the jobd. The format is of the stream name will be
@@ -293,5 +296,55 @@ object Util extends Logging {
       ois.close()
       fis.close()
     }
+  }
+
+  /**
+   * Convert a java map to a Scala map
+   * */
+  def javaMapAsScalaMap[T, K](javaMap: java.util.Map[T, K]): Map[T, K] = {
+    javaMap.toMap
+  }
+
+  /**
+   * Returns the the first host address which is not the loopback address, or {@link java.net.InetAddress#getLocalHost InetAddress.getLocalhost()} as a fallback
+   *
+   * @return the {@link java.net.InetAddress InetAddress} which represents the localhost
+   */
+  def getLocalHost: InetAddress = {
+    val localHost = InetAddress.getLocalHost
+    if (localHost.isLoopbackAddress) {
+      warn("Hostname %s resolves to a loopback address, trying to resolve an external IP address.".format(localHost.getHostName))
+      val networkInterfaces = if (System.getProperty("os.name").startsWith("Windows")) NetworkInterface.getNetworkInterfaces.toList else NetworkInterface.getNetworkInterfaces.toList.reverse
+      for (networkInterface <- networkInterfaces) {
+        val addresses = networkInterface.getInetAddresses.toList.filterNot(address => address.isLinkLocalAddress || address.isLoopbackAddress)
+        if (addresses.nonEmpty) {
+          val address = addresses.find(_.isInstanceOf[Inet4Address]).getOrElse(addresses.head)
+          debug("Found an external IP address %s which represents the localhost.".format(address.getHostAddress))
+          return InetAddress.getByAddress(address.getAddress)
+        }
+      }
+    }
+    localHost
+  }
+
+  /**
+   * A helper function which returns system's default serde factory class according to the
+   * serde name. If not found, throw exception.
+   */
+  def defaultSerdeFactoryFromSerdeName(serdeName: String) = {
+    info("looking for default serdes")
+
+    val serde = serdeName match {
+      case "byte" => classOf[ByteSerdeFactory].getCanonicalName
+      case "bytebuffer" => classOf[ByteBufferSerdeFactory].getCanonicalName
+      case "integer" => classOf[IntegerSerdeFactory].getCanonicalName
+      case "json" => classOf[JsonSerdeFactory].getCanonicalName
+      case "long" => classOf[LongSerdeFactory].getCanonicalName
+      case "serializable" => classOf[SerializableSerdeFactory[java.io.Serializable]].getCanonicalName
+      case "string" => classOf[StringSerdeFactory].getCanonicalName
+      case _ => throw new SamzaException("No class defined for serde %s" format serdeName)
+    }
+    info("use default serde %s for %s" format (serde, serdeName))
+    serde
   }
 }

@@ -41,7 +41,7 @@ object TestCheckpointTool {
   var systemProducer: SystemProducer = null
   var systemAdmin: SystemAdmin = null
 
-  class MockCheckpointManagerFactory {
+  class MockCheckpointManagerFactory extends CheckpointManagerFactory {
     def getCheckpointManager(config: Config, registry: MetricsRegistry) = checkpointManager
   }
 
@@ -68,7 +68,8 @@ class TestCheckpointTool extends AssertionsForJUnit with MockitoSugar {
       TaskConfig.INPUT_STREAMS -> "test.foo",
       TaskConfig.CHECKPOINT_MANAGER_FACTORY -> classOf[MockCheckpointManagerFactory].getName,
       SystemConfig.SYSTEM_FACTORY.format("test") -> classOf[MockSystemFactory].getName,
-      SystemConfig.SYSTEM_FACTORY.format("coordinator") -> classOf[MockCoordinatorStreamSystemFactory].getName
+      SystemConfig.SYSTEM_FACTORY.format("coordinator") -> classOf[MockCoordinatorStreamSystemFactory].getName,
+      TaskConfig.GROUPER_FACTORY -> "org.apache.samza.container.grouper.task.GroupByContainerCountFactory"
     ))
     val metadata = new SystemStreamMetadata("foo", Map[Partition, SystemStreamPartitionMetadata](
       new Partition(0) -> new SystemStreamPartitionMetadata("0", "100", "101"),
@@ -86,7 +87,7 @@ class TestCheckpointTool extends AssertionsForJUnit with MockitoSugar {
 
   @Test
   def testReadLatestCheckpoint {
-    val checkpointTool = new CheckpointTool(config, null, TestCheckpointTool.checkpointManager)
+    val checkpointTool = CheckpointTool(config, null)
     checkpointTool.run
     verify(TestCheckpointTool.checkpointManager).readLastCheckpoint(tn0)
     verify(TestCheckpointTool.checkpointManager).readLastCheckpoint(tn1)
@@ -98,7 +99,7 @@ class TestCheckpointTool extends AssertionsForJUnit with MockitoSugar {
     val toOverwrite = Map(tn0 -> Map(new SystemStreamPartition("test", "foo", p0) -> "42"),
       tn1 -> Map(new SystemStreamPartition("test", "foo", p1) -> "43"))
 
-    val checkpointTool = new CheckpointTool(config, toOverwrite, TestCheckpointTool.checkpointManager)
+    val checkpointTool = CheckpointTool(config, toOverwrite)
     checkpointTool.run
     verify(TestCheckpointTool.checkpointManager)
       .writeCheckpoint(tn0, new Checkpoint(Map(new SystemStreamPartition("test", "foo", p0) -> "42")))

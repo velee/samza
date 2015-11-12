@@ -23,15 +23,16 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import org.apache.samza.SamzaException;
+import org.apache.samza.coordinator.stream.messages.CoordinatorStreamMessage;
+import org.apache.samza.coordinator.stream.messages.Delete;
+import org.apache.samza.coordinator.stream.messages.SetConfig;
 import org.apache.samza.serializers.model.SamzaObjectMapper;
 import org.apache.samza.system.SystemAdmin;
 import org.apache.samza.system.OutgoingMessageEnvelope;
-import org.apache.samza.system.SystemProducer;
 import org.apache.samza.system.SystemStream;
 import org.apache.samza.util.SinglePartitionWithoutOffsetsSystemAdmin;
 import org.codehaus.jackson.type.TypeReference;
@@ -42,12 +43,12 @@ public class TestCoordinatorStreamSystemProducer {
   public void testCoordinatorStreamSystemProducer() {
     String source = "source";
     SystemStream systemStream = new SystemStream("system", "stream");
-    MockSystemProducer systemProducer = new MockSystemProducer(source);
+    MockCoordinatorSystemProducer systemProducer = new MockCoordinatorSystemProducer(source);
     MockSystemAdmin systemAdmin = new MockSystemAdmin();
     CoordinatorStreamSystemProducer producer = new CoordinatorStreamSystemProducer(systemStream, systemProducer, systemAdmin);
-    CoordinatorStreamMessage.SetConfig setConfig1 = new CoordinatorStreamMessage.SetConfig(source, "job.name", "my-job-name");
-    CoordinatorStreamMessage.SetConfig setConfig2 = new CoordinatorStreamMessage.SetConfig(source, "job.id", "1234");
-    CoordinatorStreamMessage.Delete delete = new CoordinatorStreamMessage.Delete(source, "job.name", CoordinatorStreamMessage.SetConfig.TYPE);
+    SetConfig setConfig1 = new SetConfig(source, "job.name", "my-job-name");
+    SetConfig setConfig2 = new SetConfig(source, "job.id", "1234");
+    Delete delete = new Delete(source, "job.name", SetConfig.TYPE);
     assertFalse(systemProducer.isRegistered());
     producer.register(source);
     assertTrue(systemProducer.isRegistered());
@@ -93,59 +94,22 @@ public class TestCoordinatorStreamSystemProducer {
     }
   }
 
-  private static class MockSystemProducer implements SystemProducer {
-    private final String expectedSource;
-    private final List<OutgoingMessageEnvelope> envelopes;
-    private boolean started = false;
-    private boolean stopped = false;
-    private boolean registered = false;
-    private boolean flushed = false;
+  private static class MockCoordinatorSystemProducer extends MockCoordinatorStreamSystemFactory.MockSystemProducer {
 
-    public MockSystemProducer(String expectedSource) {
-      this.expectedSource = expectedSource;
-      this.envelopes = new ArrayList<OutgoingMessageEnvelope>();
+    public MockCoordinatorSystemProducer(String expectedSource) {
+      super(expectedSource);
     }
 
-    public void start() {
-      started = true;
-    }
-
-    public void stop() {
-      stopped = true;
-    }
-
+    @Override
     public void register(String source) {
-      assertEquals(expectedSource, source);
-      registered = true;
+      assertEquals(super.getExpectedSource(), source);
+      super.register(source);
     }
 
-    public void send(String source, OutgoingMessageEnvelope envelope) {
-      envelopes.add(envelope);
-    }
-
+    @Override
     public void flush(String source) {
-      assertEquals(expectedSource, source);
-      flushed = true;
-    }
-
-    public List<OutgoingMessageEnvelope> getEnvelopes() {
-      return envelopes;
-    }
-
-    public boolean isStarted() {
-      return started;
-    }
-
-    public boolean isStopped() {
-      return stopped;
-    }
-
-    public boolean isRegistered() {
-      return registered;
-    }
-
-    public boolean isFlushed() {
-      return flushed;
+      assertEquals(super.getExpectedSource(), source);
+      super.flush(source);
     }
   }
 }

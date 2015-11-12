@@ -36,7 +36,7 @@ object TaskStorageManager {
 
   def getStorePartitionDir(storeBaseDir: File, storeName: String, taskName: TaskName) = {
     // TODO: Sanitize, check and clean taskName string as a valid value for a file
-    new File(storeBaseDir, storeName + File.separator + taskName)
+    new File(storeBaseDir, (storeName + File.separator + taskName.toString).replace(' ', '_'))
   }
 }
 
@@ -65,7 +65,7 @@ class TaskStorageManager(
   def init {
     cleanBaseDirs
     setupBaseDirs
-    createStreams
+    validateChangelogStreams
     startConsumers
     restoreStores
     stopConsumers
@@ -122,14 +122,14 @@ class TaskStorageManager(
     })
   }
 
-  private def createStreams = {
-    info("Creating streams that are not present for changelog")
+  private def validateChangelogStreams = {
+    info("Validating change log streams")
 
     for ((storeName, systemStream) <- changeLogSystemStreams) {
       val systemAdmin = systemAdmins
         .getOrElse(systemStream.getSystem,
                    throw new SamzaException("Unable to get systemAdmin for store " + storeName + " and systemStream" + systemStream))
-      systemAdmin.createChangelogStream(systemStream.getStream, changeLogStreamPartitions)
+      systemAdmin.validateChangelogStream(systemStream.getStream, changeLogStreamPartitions)
     }
 
     val changeLogMetadata = streamMetadataCache.getStreamMetadata(changeLogSystemStreams.values.toSet)
@@ -188,9 +188,13 @@ class TaskStorageManager(
     taskStores.values.foreach(_.flush)
   }
 
-  def stop() {
+  def stopStores() {
     debug("Stopping stores.")
     taskStores.values.foreach(_.stop)
+  }
+
+  def stop() {
+    stopStores()
 
     debug("Persisting logged key value stores")
     changeLogSystemStreams.foreach { case (store, systemStream) => {
@@ -207,7 +211,6 @@ class TaskStorageManager(
       info("Successfully stored offset %s for store %s in OFFSET file " format (newestOffset, store))
     }}
   }
-
 
   /**
    * Builds a map from SystemStreamPartition to oldest offset for changelogs.

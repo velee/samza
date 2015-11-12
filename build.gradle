@@ -78,10 +78,12 @@ rat {
     'gradle/wrapper/**',
     'gradlew',
     'gradlew.bat',
-    'samza-test/state/mystore/**',
+    'samza-test/state/**',
     'README.md',
     'RELEASE.md',
-    'samza-test/src/main/resources/**'
+    'samza-test/src/main/resources/**',
+    'samza-hdfs/src/main/resources/**',
+    'samza-hdfs/src/test/resources/**'
   ]
 }
 
@@ -132,6 +134,7 @@ project(":samza-core_$scalaVersion") {
 
   // Force scala joint compilation
   sourceSets.main.scala.srcDir "src/main/java"
+  sourceSets.test.scala.srcDir "src/test/java"
   sourceSets.main.java.srcDirs = []
 
   jar {
@@ -154,6 +157,54 @@ project(":samza-core_$scalaVersion") {
 
   checkstyle {
     configFile = new File(rootDir, "checkstyle/checkstyle.xml")
+  }
+}
+
+project(":samza-autoscaling_$scalaVersion") {
+  apply plugin: 'scala'
+  apply plugin: 'checkstyle'
+
+
+  dependencies {
+    compile project(':samza-api')
+    compile project(":samza-core_$scalaVersion")
+    compile "org.scala-lang:scala-library:$scalaLibVersion"
+    compile "org.slf4j:slf4j-api:$slf4jVersion"
+    compile "net.sf.jopt-simple:jopt-simple:$joptSimpleVersion"
+    compile "org.codehaus.jackson:jackson-mapper-asl:$jacksonVersion"
+    compile "org.eclipse.jetty:jetty-webapp:$jettyVersion"
+    compile("org.apache.hadoop:hadoop-yarn-client:$yarnVersion") {
+      exclude module: 'slf4j-log4j12'
+      exclude module: 'servlet-api'
+    }
+    compile("org.apache.hadoop:hadoop-common:$yarnVersion") {
+      exclude module: 'slf4j-log4j12'
+      exclude module: 'servlet-api'
+    }
+    compile "org.apache.httpcomponents:httpclient:$httpClientVersion"
+    testCompile "junit:junit:$junitVersion"
+    testCompile "org.mockito:mockito-all:$mockitoVersion"
+    testCompile "org.scalatest:scalatest_$scalaVersion:$scalaTestVersion"
+  }
+
+  checkstyle {
+    configFile = new File(rootDir, "checkstyle/checkstyle.xml")
+  }
+}
+
+project(':samza-elasticsearch') {
+  apply plugin: 'java'
+
+  dependencies {
+    compile project(':samza-api')
+    compile project(":samza-core_$scalaVersion")
+    compile "org.elasticsearch:elasticsearch:$elasticsearchVersion"
+    compile "org.slf4j:slf4j-api:$slf4jVersion"
+    testCompile "junit:junit:$junitVersion"
+    testCompile "org.mockito:mockito-all:$mockitoVersion"
+
+    // Logging in tests is good.
+    testRuntime "org.slf4j:slf4j-simple:$slf4jVersion"
   }
 }
 
@@ -183,6 +234,7 @@ project(":samza-kafka_$scalaVersion") {
     testCompile "junit:junit:$junitVersion"
     testCompile "org.mockito:mockito-all:$mockitoVersion"
     testCompile "org.scalatest:scalatest_$scalaVersion:$scalaTestVersion"
+    testCompile project(":samza-core_$scalaVersion").sourceSets.test.output
 
     // Logging in tests is good.
     testRuntime "org.slf4j:slf4j-simple:$slf4jVersion"
@@ -193,8 +245,8 @@ project(":samza-kafka_$scalaVersion") {
     minHeapSize = "1560m"
     maxHeapSize = "1560m"
     jvmArgs = ["-XX:+UseConcMarkSweepGC", "-server"]
-    // There appear to be issues between TestKafkaSystemAdmin and 
-    // TestKafkaCheckpointManager both running brokeres and ZK. Restarting the 
+    // There appear to be issues between TestKafkaSystemAdmin and
+    // TestKafkaCheckpointManager both running brokeres and ZK. Restarting the
     // gradle worker after every test clears things up. These tests should be
     // moved to the integration test suite.
     forkEvery = 1
@@ -221,6 +273,10 @@ project(':samza-log4j') {
 project(":samza-yarn_$scalaVersion") {
   apply plugin: 'scala'
   apply plugin: 'lesscss'
+
+  // Force scala joint compilation
+  sourceSets.main.scala.srcDir "src/main/java"
+  sourceSets.main.java.srcDirs = []
 
   dependencies {
     compile project(':samza-api')
@@ -372,6 +428,9 @@ project(":samza-kv-inmemory_$scalaVersion") {
 project(":samza-kv-rocksdb_$scalaVersion") {
   apply plugin: 'scala'
 
+  sourceSets.test.scala.srcDir "src/test/java"
+  sourceSets.test.java.srcDirs = []
+
   dependencies {
     compile project(':samza-api')
     compile project(":samza-core_$scalaVersion")
@@ -381,6 +440,30 @@ project(":samza-kv-rocksdb_$scalaVersion") {
     testCompile "junit:junit:$junitVersion"
     testCompile "org.scalatest:scalatest_$scalaVersion:$scalaTestVersion"
   }
+}
+
+project(":samza-hdfs_$scalaVersion") {
+    apply plugin: 'scala'
+
+    dependencies {
+        compile project(':samza-api')
+        compile project(":samza-core_$scalaVersion")
+        compile project(":samza-kafka_$scalaVersion")
+        compile "org.scala-lang:scala-library:$scalaLibVersion"
+        compile("org.apache.hadoop:hadoop-hdfs:$yarnVersion") {
+          exclude module: 'slf4j-log4j12'
+          exclude module: 'servlet-api'
+        }
+        compile("org.apache.hadoop:hadoop-common:$yarnVersion") {
+          exclude module: 'slf4j-log4j12'
+          exclude module: 'servlet-api'
+          exclude module: 'zookeeper'
+        }
+
+        testCompile "junit:junit:$junitVersion"
+        testCompile "org.scalatest:scalatest_$scalaVersion:$scalaTestVersion"
+        testCompile "org.apache.hadoop:hadoop-minicluster:$yarnVersion"
+    }
 }
 
 project(":samza-test_$scalaVersion") {
@@ -402,6 +485,7 @@ project(":samza-test_$scalaVersion") {
     runtime project(":samza-log4j")
     runtime project(":samza-yarn_$scalaVersion")
     runtime project(":samza-kafka_$scalaVersion")
+    runtime project(":samza-hdfs_$scalaVersion")
     compile "org.scala-lang:scala-library:$scalaLibVersion"
     compile "net.sf.jopt-simple:jopt-simple:$joptSimpleVersion"
     compile "javax.mail:mail:1.4"

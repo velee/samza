@@ -33,6 +33,10 @@
 
     <subpackage name="config">
         <allow class="org.apache.samza.SamzaException" />
+        <allow pkg="org.apache.samza.system" />
+        <allow pkg="org.apache.samza.util" />
+
+        <allow class="org.apache.samza.Partition" />
     </subpackage>
 
     <subpackage name="serializers">
@@ -48,13 +52,24 @@
         </subpackage>
     </subpackage>
 
+    <subpackage name="migration">
+        <allow pkg="org.apache.samza.config" />
+    </subpackage>
+
     <subpackage name="job">
         <allow pkg="org.apache.samza.config" />
-
+        <allow pkg="org.apache.samza.coordinator.stream" />
+        <allow pkg="org.apache.samza.metrics" />
+        <allow class="org.apache.samza.system.SystemStreamPartitionIterator" />
+        <allow class="org.apache.samza.container.SamzaContainer" />
+        <allow pkg="org.apache.samza.job.model" />
         <subpackage name="model">
+            <allow pkg="org.apache.samza.coordinator.stream.messages" />
+
             <allow class="org.apache.samza.Partition" />
             <allow class="org.apache.samza.container.TaskName" />
             <allow class="org.apache.samza.system.SystemStreamPartition" />
+            <allow class="org.apache.samza.container.LocalityManager" />
         </subpackage>
     </subpackage>
 
@@ -83,6 +98,7 @@
 
         <allow class="org.apache.samza.Partition" />
         <allow class="org.apache.samza.SamzaException" />
+        <allow class="joptsimple.OptionSet" />
     </subpackage>
 
     <subpackage name="metrics">
@@ -100,10 +116,13 @@
     <subpackage name="container">
         <allow pkg="org.apache.samza.config" />
         <allow pkg="org.apache.samza.coordinator.stream" />
+        <allow class="org.apache.samza.coordinator.stream.AbstractCoordinatorStreamManager" />
         <subpackage name="grouper">
             <subpackage name="stream">
                 <allow pkg="org.apache.samza.container" />
                 <allow pkg="org.apache.samza.system" />
+
+                <allow class="org.apache.samza.Partition" />
             </subpackage>
 
             <subpackage name="task">
@@ -119,9 +138,12 @@
         <allow pkg="org.apache.samza.system" />
         <allow pkg="org.apache.samza.serializers" />
         <allow pkg="org.apache.samza.util" />
+        <allow pkg="org.apache.samza.coordinator.stream.messages" />
 
         <allow class="org.apache.samza.Partition" />
         <allow class="org.apache.samza.SamzaException" />
+        <allow class="joptsimple.OptionSet" />
+        <allow class="org.apache.samza.container.TaskName" />
     </subpackage>
 
     <subpackage name="checkpoint">
@@ -132,6 +154,7 @@
         <allow pkg="org.apache.samza.system" />
 
         <allow class="org.apache.samza.SamzaException" />
+        <allow class="org.apache.samza.coordinator.stream.AbstractCoordinatorStreamManager" />
     </subpackage>
 
     <subpackage name="storage">
@@ -141,6 +164,14 @@
         <allow pkg="org.apache.samza.serializers" />
         <allow pkg="org.apache.samza.system" />
         <allow pkg="org.apache.samza.task" />
+        <allow class="org.apache.samza.coordinator.stream.AbstractCoordinatorStreamManager" />
+        <allow pkg="org.apache.samza.util" />
+        <allow pkg="org.apache.samza.job" />
+        <allow pkg="org.apache.samza.config" />
+        <allow pkg="joptsimple" />
+
+        <allow class="org.apache.samza.SamzaException" />
+        <allow class="org.apache.samza.Partition" />
     </subpackage>
 
     <subpackage name="logging">
@@ -169,6 +200,34 @@
             <allow pkg="org.apache.samza.storage" />
             <allow pkg="org.apache.samza.task" />
             <allow pkg="org.apache.samza.util" />
+        </subpackage>
+    </subpackage>
+
+
+    <subpackage name="manager">
+        <allow pkg="org.apache.samza.coordinator.stream" />
+        <allow class="org.apache.samza.container.TaskName" />
+    </subpackage>
+
+    <subpackage name="autoscaling">
+        <subpackage name="deployer">
+            <allow pkg="org.apache.samza.coordinator.stream" />
+            <allow pkg="org.apache.samza.util" />
+            <allow pkg="org.apache.samza.autoscaling.utils" />
+
+            <allow class="org.apache.samza.config.Config" />
+            <allow class="org.apache.samza.config.JobConfig" />
+            <allow class="org.apache.samza.container.SamzaContainer" />
+            <allow class="org.apache.samza.job.JobRunner" />
+            <allow class="org.apache.samza.job.model.ContainerModel" />
+            <allow class="org.apache.samza.metrics.MetricsRegistryMap" />
+            <allow class="org.apache.samza.system.SystemStreamPartitionIterator" />
+            <allow class="org.apache.hadoop.yarn.exceptions.YarnException" />
+            <allow class="joptsimple.OptionSet" />
+        </subpackage>
+        <subpackage name="utils">
+            <allow pkg="org.apache.hadoop.yarn" />
+            <allow pkg="org.apache.http" />
         </subpackage>
     </subpackage>
 

@@ -23,6 +23,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.samza.config.Config;
+import org.apache.samza.container.LocalityManager;
+import org.apache.samza.coordinator.stream.messages.SetContainerHostMapping;
 
 /**
  * <p>
@@ -37,20 +39,32 @@ import org.apache.samza.config.Config;
  * </p>
  */
 public class JobModel {
+  private static final String EMPTY_STRING = "";
   private final Config config;
   private final Map<Integer, ContainerModel> containers;
-  private final Map<Integer, String> containerToHostMapping;
+
+  private final LocalityManager localityManager;
+  private Map<Integer, String> localityMappings = new HashMap<Integer, String>();
 
   public int maxChangeLogStreamPartitions;
 
   public JobModel(Config config, Map<Integer, ContainerModel> containers) {
-    this(config, containers, new HashMap<Integer, String>());
+    this(config, containers, null);
   }
 
-  public JobModel(Config config, Map<Integer, ContainerModel> containers, Map<Integer, String> containerToHostMapping) {
+  public JobModel(Config config, Map<Integer, ContainerModel> containers, LocalityManager localityManager) {
     this.config = config;
     this.containers = Collections.unmodifiableMap(containers);
-    this.containerToHostMapping = Collections.unmodifiableMap(containerToHostMapping);
+    this.localityManager = localityManager;
+
+    if (localityManager == null) {
+      for (Integer containerId : containers.keySet()) {
+        localityMappings.put(containerId, null);
+      }
+    } else {
+      populateContainerLocalityMappings();
+    }
+
 
     // Compute the number of change log stream partitions as the maximum partition-id
     // of all total number of tasks of the job; Increment by 1 because partition ids
@@ -66,6 +80,45 @@ public class JobModel {
 
   public Config getConfig() {
     return config;
+  }
+
+  /**
+   * Returns the container to host mapping for a given container ID and mapping key
+   *
+   * @param containerId the ID of the container
+   * @param key mapping key which is one of the keys declared in {@link org.apache.samza.coordinator.stream.messages.SetContainerHostMapping}
+   * @return the value if it exists for a given container and key, otherwise an empty string
+   */
+  public String getContainerToHostValue(Integer containerId, String key) {
+    if (localityManager == null) {
+      return EMPTY_STRING;
+    }
+    final Map<String, String> mappings = localityManager.readContainerLocality().get(containerId);
+    if (mappings == null) {
+      return EMPTY_STRING;
+    }
+    if (!mappings.containsKey(key)) {
+      return EMPTY_STRING;
+    }
+    return mappings.get(key);
+  }
+
+  private void populateContainerLocalityMappings() {
+    Map<Integer, Map<String, String>> allMappings = localityManager.readContainerLocality();
+    for (Integer containerId: containers.keySet()) {
+      if (allMappings.containsKey(containerId)) {
+        localityMappings.put(containerId, allMappings.get(containerId).get(SetContainerHostMapping.HOST_KEY));
+      } else {
+        localityMappings.put(containerId, null);
+      }
+    }
+  }
+
+  public Map<Integer, String> getAllContainerLocality() {
+    if (localityManager != null) {
+      populateContainerLocalityMappings();
+    }
+    return localityMappings;
   }
 
   public Map<Integer, ContainerModel> getContainers() {

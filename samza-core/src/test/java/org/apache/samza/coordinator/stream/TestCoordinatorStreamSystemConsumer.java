@@ -33,6 +33,9 @@ import java.util.Set;
 
 import org.apache.samza.Partition;
 import org.apache.samza.SamzaException;
+import org.apache.samza.coordinator.stream.messages.CoordinatorStreamMessage;
+import org.apache.samza.coordinator.stream.messages.Delete;
+import org.apache.samza.coordinator.stream.messages.SetConfig;
 import org.apache.samza.serializers.model.SamzaObjectMapper;
 import org.apache.samza.system.IncomingMessageEnvelope;
 import org.apache.samza.system.SystemConsumer;
@@ -49,9 +52,9 @@ public class TestCoordinatorStreamSystemConsumer {
     SystemStream systemStream = new SystemStream("system", "stream");
     MockSystemConsumer systemConsumer = new MockSystemConsumer(new SystemStreamPartition(systemStream, new Partition(0)));
     CoordinatorStreamSystemConsumer consumer = new CoordinatorStreamSystemConsumer(systemStream, systemConsumer, new SinglePartitionWithoutOffsetsSystemAdmin());
-    assertFalse(systemConsumer.isRegistered());
+    assertEquals(0, systemConsumer.getRegisterCount());
     consumer.register();
-    assertTrue(systemConsumer.isRegistered());
+    assertEquals(1, systemConsumer.getRegisterCount());
     assertFalse(systemConsumer.isStarted());
     consumer.start();
     assertTrue(systemConsumer.isStarted());
@@ -69,12 +72,29 @@ public class TestCoordinatorStreamSystemConsumer {
     assertTrue(systemConsumer.isStopped());
   }
 
+  @Test
+  public void testCoordinatorStreamSystemConsumerRegisterOnceOnly() throws Exception {
+    Map<String, String> expectedConfig = new LinkedHashMap<String, String>();
+    expectedConfig.put("job.id", "1234");
+    SystemStream systemStream = new SystemStream("system", "stream");
+    MockSystemConsumer systemConsumer = new MockSystemConsumer(new SystemStreamPartition(systemStream, new Partition(0)));
+    CoordinatorStreamSystemConsumer consumer = new CoordinatorStreamSystemConsumer(systemStream, systemConsumer, new SinglePartitionWithoutOffsetsSystemAdmin());
+    assertEquals(0, systemConsumer.getRegisterCount());
+    consumer.register();
+    assertEquals(1, systemConsumer.getRegisterCount());
+    assertFalse(systemConsumer.isStarted());
+    consumer.start();
+    assertTrue(systemConsumer.isStarted());
+    consumer.register();
+    assertEquals(1, systemConsumer.getRegisterCount());
+  }
+
   private boolean testOrder(Set<CoordinatorStreamMessage> bootstrappedStreamSet) {
     int initialSize = bootstrappedStreamSet.size();
     List<CoordinatorStreamMessage> listStreamMessages = new ArrayList<CoordinatorStreamMessage>();
-    listStreamMessages.add(new CoordinatorStreamMessage.SetConfig("order1", "job.name.order1", "my-order1-name"));
-    listStreamMessages.add(new CoordinatorStreamMessage.SetConfig("order2", "job.name.order2", "my-order2-name"));
-    listStreamMessages.add(new CoordinatorStreamMessage.SetConfig("order3", "job.name.order3", "my-order3-name"));
+    listStreamMessages.add(new SetConfig("order1", "job.name.order1", "my-order1-name"));
+    listStreamMessages.add(new SetConfig("order2", "job.name.order2", "my-order2-name"));
+    listStreamMessages.add(new SetConfig("order3", "job.name.order3", "my-order3-name"));
     bootstrappedStreamSet.addAll(listStreamMessages);
     Iterator<CoordinatorStreamMessage> iter = bootstrappedStreamSet.iterator();
 
@@ -93,7 +113,7 @@ public class TestCoordinatorStreamSystemConsumer {
   private static class MockSystemConsumer implements SystemConsumer {
     private boolean started = false;
     private boolean stopped = false;
-    private boolean registered = false;
+    private int registerCount = 0;
     private final SystemStreamPartition expectedSystemStreamPartition;
     private int pollCount = 0;
 
@@ -110,13 +130,11 @@ public class TestCoordinatorStreamSystemConsumer {
     }
 
     public void register(SystemStreamPartition systemStreamPartition, String offset) {
-      registered = true;
+      registerCount++;
       assertEquals(expectedSystemStreamPartition, systemStreamPartition);
     }
 
-    public boolean isRegistered() {
-      return registered;
-    }
+    public int getRegisterCount() { return registerCount; }
 
     public Map<SystemStreamPartition, List<IncomingMessageEnvelope>> poll(Set<SystemStreamPartition> systemStreamPartitions, long timeout) throws InterruptedException {
       Map<SystemStreamPartition, List<IncomingMessageEnvelope>> map = new LinkedHashMap<SystemStreamPartition, List<IncomingMessageEnvelope>>();
@@ -126,9 +144,9 @@ public class TestCoordinatorStreamSystemConsumer {
 
       if (pollCount++ == 0) {
         List<IncomingMessageEnvelope> list = new ArrayList<IncomingMessageEnvelope>();
-        CoordinatorStreamMessage.SetConfig setConfig1 = new CoordinatorStreamMessage.SetConfig("test", "job.name", "my-job-name");
-        CoordinatorStreamMessage.SetConfig setConfig2 = new CoordinatorStreamMessage.SetConfig("test", "job.id", "1234");
-        CoordinatorStreamMessage.Delete delete = new CoordinatorStreamMessage.Delete("test", "job.name", CoordinatorStreamMessage.SetConfig.TYPE);
+        SetConfig setConfig1 = new SetConfig("test", "job.name", "my-job-name");
+        SetConfig setConfig2 = new SetConfig("test", "job.id", "1234");
+        Delete delete = new Delete("test", "job.name", SetConfig.TYPE);
         list.add(new IncomingMessageEnvelope(systemStreamPartition, null, serialize(setConfig1.getKeyArray()), serialize(setConfig1.getMessageMap())));
         list.add(new IncomingMessageEnvelope(systemStreamPartition, null, serialize(setConfig2.getKeyArray()), serialize(setConfig2.getMessageMap())));
         list.add(new IncomingMessageEnvelope(systemStreamPartition, null, serialize(delete.getKeyArray()), delete.getMessageMap()));

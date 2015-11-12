@@ -21,8 +21,7 @@ package org.apache.samza.container
 
 import java.io.File
 import org.apache.samza.SamzaException
-import org.apache.samza.checkpoint.{ CheckpointManager, OffsetManager }
-import org.apache.samza.config.Config
+import org.apache.samza.checkpoint.{CheckpointManagerFactory, OffsetManager, OffsetManagerMetrics}
 import org.apache.samza.config.MetricsConfig.Config2Metrics
 import org.apache.samza.config.SerializerConfig.Config2Serializer
 import org.apache.samza.config.ShellCommandConfig
@@ -61,8 +60,6 @@ import org.apache.samza.job.model.{TaskModel, ContainerModel, JobModel}
 import org.apache.samza.serializers.model.SamzaObjectMapper
 import org.apache.samza.config.JobConfig.Config2Job
 import java.lang.Thread.UncaughtExceptionHandler
-import org.apache.samza.serializers._
-import org.apache.samza.checkpoint.OffsetManagerMetrics
 
 object SamzaContainer extends Logging {
   def main(args: Array[String]) {
@@ -92,7 +89,7 @@ object SamzaContainer extends Logging {
 
     try {
       jmxServer = newJmxServer()
-      SamzaContainer(containerModel, jobModel).run
+      SamzaContainer(containerModel, jobModel, jmxServer).run
     } finally {
       if (jmxServer != null) {
         jmxServer.stop
@@ -112,28 +109,7 @@ object SamzaContainer extends Logging {
       .readValue(Util.read(new URL(url)), classOf[JobModel])
   }
 
-  /**
-   * A helper function which returns system's default serde factory class according to the
-   * serde name. If not found, throw exception.
-   */
-  def defaultSerdeFactoryFromSerdeName(serdeName: String) = {
-    info("looking for default serdes")
-
-    val serde = serdeName match {
-      case "byte" => classOf[ByteSerdeFactory].getCanonicalName
-      case "bytebuffer" => classOf[ByteBufferSerdeFactory].getCanonicalName
-      case "integer" => classOf[IntegerSerdeFactory].getCanonicalName
-      case "json" => classOf[JsonSerdeFactory].getCanonicalName
-      case "long" => classOf[LongSerdeFactory].getCanonicalName
-      case "serializable" => classOf[SerializableSerdeFactory[java.io.Serializable]].getCanonicalName
-      case "string" => classOf[StringSerdeFactory].getCanonicalName
-      case _ => throw new SamzaException("No class defined for serde %s" format serdeName)
-    }
-    info("use default serde %s for %s" format (serde, serdeName))
-    serde
-  }
-
-  def apply(containerModel: ContainerModel, jobModel: JobModel) = {
+  def apply(containerModel: ContainerModel, jobModel: JobModel, jmxServer: JmxServer) = {
     val config = jobModel.getConfig
     val containerId = containerModel.getContainerId
     val containerName = "samza-container-%s" format containerId
@@ -232,7 +208,7 @@ object SamzaContainer extends Logging {
     val serdes = serdeNames.map(serdeName => {
       val serdeClassName = config
         .getSerdeClass(serdeName)
-        .getOrElse(defaultSerdeFactoryFromSerdeName(serdeName))
+        .getOrElse(Util.defaultSerdeFactoryFromSerdeName(serdeName))
 
       val serde = Util.getObj[SerdeFactory[Object]](serdeClassName)
         .getSerde(serdeName, config)
@@ -330,15 +306,17 @@ object SamzaContainer extends Logging {
 
     val coordinatorSystemConsumer = new CoordinatorStreamSystemFactory().getCoordinatorStreamSystemConsumer(config, samzaContainerMetrics.registry)
     val coordinatorSystemProducer = new CoordinatorStreamSystemFactory().getCoordinatorStreamSystemProducer(config, samzaContainerMetrics.registry)
-    val checkpointManager = new CheckpointManager(coordinatorSystemProducer, coordinatorSystemConsumer, String.valueOf(containerId))
     val localityManager = new LocalityManager(coordinatorSystemProducer, coordinatorSystemConsumer)
-
+    val checkpointManager = config.getCheckpointManagerFactory() match {
+      case Some(checkpointFactoryClassName) if (!checkpointFactoryClassName.isEmpty) =>
+        Util
+          .getObj[CheckpointManagerFactory](checkpointFactoryClassName)
+          .getCheckpointManager(config, samzaContainerMetrics.registry)
+      case _ => null
+    }
     info("Got checkpoint manager: %s" format checkpointManager)
 
-    val combinedOffsets: Map[SystemStreamPartition, String] =
-      containerModel.getTasks.values().flatMap(_.getCheckpointedOffsets).toMap
-
-    val offsetManager = OffsetManager(inputStreamMetadata, config, checkpointManager, systemAdmins, offsetManagerMetrics, combinedOffsets)
+    val offsetManager = OffsetManager(inputStreamMetadata, config, checkpointManager, systemAdmins, offsetManagerMetrics)
 
     info("Got offset manager: %s" format offsetManager)
 
@@ -407,7 +385,6 @@ object SamzaContainer extends Logging {
       .values
       .map(_.getTaskName)
       .toSet
-
     val containerContext = new SamzaContainerContext(containerId, config, taskNames)
 
     val taskInstances: Map[TaskName, TaskInstance] = containerModel.getTasks.values.map(taskModel => {
@@ -509,6 +486,7 @@ object SamzaContainer extends Logging {
         taskName = taskName,
         config = config,
         metrics = taskInstanceMetrics,
+        systemAdmins = systemAdmins,
         consumerMultiplexer = consumerMultiplexer,
         collector = collector,
         containerContext = containerContext,
@@ -541,7 +519,8 @@ object SamzaContainer extends Logging {
       localityManager = localityManager,
       metrics = samzaContainerMetrics,
       reporters = reporters,
-      jvm = jvm)
+      jvm = jvm,
+      jmxServer = jmxServer)
   }
 }
 
@@ -552,6 +531,7 @@ class SamzaContainer(
   consumerMultiplexer: SystemConsumers,
   producerMultiplexer: SystemProducers,
   metrics: SamzaContainerMetrics,
+  jmxServer: JmxServer,
   offsetManager: OffsetManager = new OffsetManager,
   localityManager: LocalityManager = null,
   reporters: Map[String, MetricsReporter] = Map(),
@@ -580,8 +560,8 @@ class SamzaContainer(
 
       shutdownConsumers
       shutdownTask
-      shutdownProducers
       shutdownStores
+      shutdownProducers
       shutdownLocalityManager
       shutdownOffsetManager
       shutdownMetrics
@@ -625,10 +605,12 @@ class SamzaContainer(
       localityManager.start
       localityManager.register(String.valueOf(containerContext.id))
 
-      info("Writing container locality to Coordinator Stream")
+      info("Writing container locality and JMX address to Coordinator Stream")
       try {
-        val hostInetAddress = InetAddress.getLocalHost.getHostAddress
-        localityManager.writeContainerToHostMapping(containerContext.id, hostInetAddress)
+        val hostInet = Util.getLocalHost
+        val jmxUrl = if (jmxServer != null) jmxServer.getJmxUrl else ""
+        val jmxTunnelingUrl = if (jmxServer != null) jmxServer.getTunnelingJmxUrl else ""
+        localityManager.writeContainerToHostMapping(containerContext.id, hostInet.getHostName, jmxUrl, jmxTunnelingUrl)
       } catch {
         case uhe: UnknownHostException =>
           warn("Received UnknownHostException when persisting locality info for container %d: %s" format (containerContext.id, uhe.getMessage))  //No-op
